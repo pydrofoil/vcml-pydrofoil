@@ -1,6 +1,9 @@
 from _pydrofoilcapi_cffi import ffi
 import _pydrofoil
 
+import sys
+sys.modules['__main__'] = type(sys)('__main__')
+
 all_cpu_handles = []
 
 class C:
@@ -72,3 +75,7 @@ def pydrofoil_cpu_set_verbosity(i, v):
     cpu = ffi.from_handle(i)
     cpu.cpu.set_verbosity(bool(v))
     return 0
+
+
+sys.modules['__main__'].__dict__.update(globals())
+sys.argv = ['embedded-pypy']
