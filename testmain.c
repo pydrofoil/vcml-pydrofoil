@@ -88,6 +88,12 @@ int main(int argc, char *argv[]) {
     pydrofoil_cpu_reset(cpu);
     printf("running quietly\n");
     pydrofoil_cpu_set_verbosity(cpu, 0);
+    printf("Reset PC %ld\n", pydrofoil_cpu_pc(cpu));
+    res = pydrofoil_cpu_set_pc(cpu, 4096);
+    if (res != 0) {
+        printf("setting pc failed\n");
+        return -1;
+    }
     pydrofoil_cpu_simulate(cpu, steps);
     cycles = pydrofoil_cpu_cycles(cpu);
     printf("Simulation completed. Total cycles: %llu\n", (unsigned long long)cycles);

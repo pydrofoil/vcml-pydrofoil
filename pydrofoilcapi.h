@@ -13,7 +13,8 @@ CFFI_DLLEXPORT uint64_t pydrofoil_cpu_cycles(void*);
 CFFI_DLLEXPORT int pydrofoil_cpu_reset(void*);
 
 CFFI_DLLEXPORT int pydrofoil_cpu_set_verbosity(void*, int); // 0 = quiet, 1 = verbose
-CFFI_DLLEXPORT uint64_t pydrofoil_cpu_pc(void*);
+CFFI_DLLEXPORT uint64_t pydrofoil_cpu_pc(void* cpu);
+CFFI_DLLEXPORT int pydrofoil_cpu_set_pc(void* cpu, uint64_t value);
 
 //
 
@@ -23,8 +24,9 @@ CFFI_DLLEXPORT int pydrofoil_cpu_set_ram_read_write_callback(
         int (*)(void* cpu, uint64_t address, int size, uint64_t, void*),
         void* payload);
 
+
 // NOW:
-//    virtual void reset() override;
+//    virtual void reset() override; TODO: problem with way reset is implemented
 //    virtual vcml::u64 program_counter() override;
 //    virtual vcml::u64 stack_pointer() override;
 //

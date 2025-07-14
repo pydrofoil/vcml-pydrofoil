@@ -100,6 +100,11 @@ def pydrofoil_cpu_set_verbosity(i, v):
     cpu.cpu.set_verbosity(bool(v))
     return 0
 
+@ffi.def_extern()
+def pydrofoil_cpu_set_pc(i, val):
+    cpu = ffi.from_handle(i)
+    cpu.cpu.write_register('pc', val)
+    return 0
 
 sys.modules['__main__'].__dict__.update(globals())
 sys.argv = ['embedded-pypy']
