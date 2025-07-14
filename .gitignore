@@ -1,0 +1,3 @@
+pypy-pydrofoil-scripting-experimental/*
+testplugin
+_pydrofoilcapi_cffi.*
