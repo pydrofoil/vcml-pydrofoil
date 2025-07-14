@@ -10,7 +10,19 @@ class C:
     def __init__(self, rv64, n=None):
         self.rv64 = rv64
         self.arg = n
+        self.callbacks = None
         self.reset()
+
+    def _set_callbacks(self, read, write, payload):
+        mem = ffi.new('unsigned long[]', 1)
+        def pyread(addr):
+            res = read(self._handle, addr, 8, ffi.cast('uint64_t*', mem), payload)
+            assert res == 0
+            return _pydrofoil.bitvector(64, mem[0])
+        def pywrite(addr, value):
+            res = write(self._handle, addr, 8, value, payload)
+            assert res == 0
+        self.callbacks = _pydrofoil.Callbacks(mem_read8_intercept=pyread, mem_write8_intercept=pywrite)
 
     def step(self):
         self.steps += 1
@@ -18,9 +30,13 @@ class C:
 
     def reset(self):
         if self.rv64:
-            self.cpu = _pydrofoil.RISCV64(self.arg)
+            cls = _pydrofoil.RISCV64
         else:
-            self.cpu = _pydrofoil.RISCV32(self.arg)
+            cls = _pydrofoil.RISCV32
+        if self.callbacks:
+            self.cpu = cls(self.arg, callbacks=self.callbacks)
+        else:
+            self.cpu = cls(self.arg)
         self.steps = 0
 
 @ffi.def_extern()
@@ -36,7 +52,8 @@ def pydrofoil_allocate_cpu(spec, fn):
     print("rv64" if rv64 else "rv32")
     print(filename)
 
-    all_cpu_handles.append(res := ffi.new_handle(C(rv64, filename)))
+    all_cpu_handles.append(res := ffi.new_handle(cpu := C(rv64, filename)))
+    cpu._handle = res
     return res
 
 @ffi.def_extern()
@@ -45,6 +62,13 @@ def pydrofoil_free_cpu(i):
         all_cpu_handles.remove(i)
     except Exception:
         return -1
+    return 0
+
+@ffi.def_extern()
+def pydrofoil_cpu_set_ram_read_write_callback(i, read_cb, write_cb, payload):
+    cpu = ffi.from_handle(i)
+    cpu._set_callbacks(read_cb, write_cb, payload)
+    cpu.reset()
     return 0
 
 @ffi.def_extern()

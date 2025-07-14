@@ -17,12 +17,11 @@ CFFI_DLLEXPORT uint64_t pydrofoil_cpu_pc(void*);
 
 //
 
-CFFI_DLLEXPORT int pydrofoil_cpu_set_ram_write_callback(void*,
-                                                       int (*)(uint64_t, int size, uint64_t, void*),
-                                                       void*);
-CFFI_DLLEXPORT int pydrofoil_cpu_set_ram_read_callback(void*,
-                                                      int (*)(uint64_t, int size, uint64_t*, void*),
-                                                      void*);
+CFFI_DLLEXPORT int pydrofoil_cpu_set_ram_read_write_callback(
+        void* cpu,
+        int (*)(void* cpu, uint64_t address, int size, uint64_t*, void*),
+        int (*)(void* cpu, uint64_t address, int size, uint64_t, void*),
+        void* payload);
 
 // NOW:
 //    virtual void reset() override;
