@@ -4,7 +4,8 @@ import _pydrofoil
 all_cpu_handles = []
 
 class C:
-    def __init__(self, n=None):
+    def __init__(self, rv64, n=None):
+        self.rv64 = rv64
         self.arg = n
         self.reset()
 
@@ -13,18 +14,26 @@ class C:
         self.cpu.step()
 
     def reset(self):
-        self.cpu = _pydrofoil.RISCV64(self.arg)
+        if self.rv64:
+            self.cpu = _pydrofoil.RISCV64(self.arg)
+        else:
+            self.cpu = _pydrofoil.RISCV32(self.arg)
         self.steps = 0
 
 @ffi.def_extern()
-def pydrofoil_allocate_cpu(s):
-    if s:
-        filename = ffi.string(s).decode('utf-8')
+def pydrofoil_allocate_cpu(spec, fn):
+    if spec:
+        rv64 = "64" in ffi.string(spec).decode('utf-8')
+    else:
+        rv64 = True
+    if fn:
+        filename = ffi.string(fn).decode('utf-8')
     else:
         filename = None
+    print("rv64" if rv64 else "rv32")
     print(filename)
 
-    all_cpu_handles.append(res := ffi.new_handle(C(filename)))
+    all_cpu_handles.append(res := ffi.new_handle(C(rv64, filename)))
     return res
 
 @ffi.def_extern()

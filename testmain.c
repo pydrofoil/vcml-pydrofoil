@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
         return -1; // Exit with an error code
     }
     int steps = atoi(argv[2]);
-    void* cpu = pydrofoil_allocate_cpu(argv[1]);
+    void* cpu = pydrofoil_allocate_cpu("rv64", argv[1]);
     if (cpu == NULL) {
         printf("Failed to allocate CPU for the provided binary.\n");
         return -1; // Exit with an error code

@@ -6,7 +6,7 @@
 #endif
 
 // functions that come from rpython go here
-CFFI_DLLEXPORT void* pydrofoil_allocate_cpu(const char*);
+CFFI_DLLEXPORT void* pydrofoil_allocate_cpu(const char*, const char*);
 CFFI_DLLEXPORT int pydrofoil_free_cpu(void*);
 CFFI_DLLEXPORT int pydrofoil_cpu_simulate(void*, size_t);
 CFFI_DLLEXPORT uint64_t pydrofoil_cpu_cycles(void*);
