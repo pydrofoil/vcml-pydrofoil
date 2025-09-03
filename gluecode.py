@@ -14,13 +14,20 @@ class C:
         self.reset()
 
     def _set_callbacks(self, read, write, payload):
-        mem = ffi.new('unsigned long[]', 1)
+        self.read = read
+        self.write = write
+        self.mem = ffi.new('uint64_t[1]')
+        #mem = ffi.new('unsigned long[]', 1)
         def pyread(addr):
-            res = read(self._handle, addr, 8, ffi.cast('uint64_t*', mem), payload)
+            addr = int(addr)
+            addr = (addr << 3)
+            res = self.read(self._handle, addr, 8, ffi.cast('uint64_t*', self.mem), payload)
             assert res == 0
-            return _pydrofoil.bitvector(64, mem[0])
+            return _pydrofoil.bitvector(64, self.mem[0])
         def pywrite(addr, value):
-            res = write(self._handle, addr, 8, value, payload)
+            addr = int(addr)
+            addr = (addr << 3)
+            res = self.write(self._handle, addr, 8, value, payload)
             assert res == 0
         self.callbacks = _pydrofoil.Callbacks(mem_read8_intercept=pyread, mem_write8_intercept=pywrite)
 
