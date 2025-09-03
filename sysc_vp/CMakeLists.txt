@@ -4,6 +4,7 @@ project(sysc_vp VERSION 2025.07.31 LANGUAGES C CXX)
 # Look into the cmake/ subdir when searching for a custom module
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 include(FindGithubRepo)
+set(PYDROFOIL_LIB_DIR ${PROJECT_SOURCE_DIR}/../)
 
 # Normally, we would create a library for those, install it
 # and import it using find_package(), here it seems that 
@@ -38,11 +39,11 @@ target_include_directories(sysc_vp PRIVATE
 # Tells the linker where to find compiled code *at compile time*
 target_link_libraries(sysc_vp mwr vcml)
 target_link_libraries(sysc_vp 
-  pydrofoilcapi_cffi
+  pydrofoilcapi_cffi # The linker expects to find a shared object named libpydorofilapi_cffi.so
 )
 
 target_link_directories(sysc_vp PRIVATE
-    ${PROJECT_SOURCE_DIR}/pydrofoil/lib
+    ${PYDROFOIL_LIB_DIR}
 )
 
 set_target_properties(sysc_vp PROPERTIES CXX_STANDARD 17)
@@ -53,6 +54,6 @@ set_target_properties(sysc_vp PROPERTIES OUTPUT_NAME "sysc_vp")
 # memory. Our .so lives in a custom folder, either we export LD_LIBRARY_PATH
 # or we embed the .so path in the executable at build time --> not working
 set_target_properties(sysc_vp PROPERTIES
-  BUILD_RPATH "${PROJECT_SOURCE_DIR}/pydrofoil/lib"
-  INSTALL_RPATH "${PROJECT_SOURCE_DIR}/pydrofoil/lib"
+  BUILD_RPATH "${PYDROFOIL_LIB_DIR}"
+  INSTALL_RPATH "${PYDROFOIL_LIB_DIR}"
 )
