@@ -1,68 +1,6 @@
 #include "core.h"
 #include <cstdio>
 
-extern "C" {
-    #include "pydrofoilcapi.h" 
-}
-
-
-// C++ member functions cannot be used as callbacks, we need to define C-style functions
-// (not member of the class), but they still need to get access to the class fields
-// so we misuse the payload pointer to pass this as argument
-// get a dmi pointer check if I can do a dmi access and if yes do the transaction from here
-// the out socket has a method o chec for dmi. If the dmi fails then we go the slow way otherwise we're done
-// vcml::success(data.access_dmi(
-//            tx.is_read ? tlm::TLM_READ_COMMAND : tlm::TLM_WRITE_COMMAND,
-//            tx.addr, tx.data, tx.size, info)))
-int write_mem(void* cpu, uint64_t address, int size, uint64_t value, void* payload) {
-    auto core = reinterpret_cast<PydrofoilCore*>(payload);
-    PydrofoilCore::MemAccess memtask;
-
-    memtask.type = PydrofoilCore::MemTask::Write;
-    memtask.addr = address;
-    memtask.size = size;
-    memtask.value = value;
-
-    std::future<bool> res = memtask.result.get_future();
-
-    {
-        std::lock_guard lock(core->memtask_mutex);
-        core->memtask_queue.push(std::move(memtask));
-    }
-    core->memtask_cv.notify_one();
-
-    if (res.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready)
-        return res.get()? 0:1;
-    else
-        return 0; // we timed out, but now we get weird callback calls at the beginning --> we return 0
-}
-
-
-// The debug leads to a debug transaction avoid timig annotation --> no wait --> we dont have to be in a sc_thread
-// Should be changed, NO access when callbacks are being set!!!
-int read_mem(void* cpu, uint64_t address, int size, uint64_t* destination, void* payload) {
-    auto core = reinterpret_cast<PydrofoilCore*>(payload);
-    PydrofoilCore::MemAccess memtask;
-
-    memtask.type = PydrofoilCore::MemTask::Read;
-    memtask.addr = address;
-    memtask.size = size;
-    memtask.dest = destination;
-
-    std::future<bool> res = memtask.result.get_future();
-
-    {
-        std::lock_guard lock(core->memtask_mutex);
-        core->memtask_queue.push(std::move(memtask));
-    }
-    core->memtask_cv.notify_one();
-
-    if (res.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready)
-        return res.get()? 0:1;
-    else
-        return 0; // we timed out, but now we get weird callback calls at the beginning --> we return 0
-}
-
 
 PydrofoilCore::PydrofoilCore(const sc_core::sc_module_name& name, const char* core_type):
 vcml::processor(name,"riscv"),
@@ -106,16 +44,39 @@ PydrofoilCore::~PydrofoilCore()
 }
 
 
-bool PydrofoilCore::write_reg_dbg(size_t reg, const void* buf, size_t len){
-    if(reg == 0 && len==8)
-        return pydrofoil_cpu_set_pc(cpu, *reinterpret_cast<const vcml::u64*>(buf)) == 0;
+bool PydrofoilCore::write_reg_dbg(size_t reg, const void* buf, size_t len)
+{
+    if(reg == 0 && len==8){
+        PythonTask task;
+        task.py_funct = Funct::SetPc;
+        task.arg = *reinterpret_cast<const vcml::u64*>(buf);
+        std::future<uint64_t> done = task.result.get_future();
+
+        {
+            std::lock_guard lock(task_mutex);
+            task_queue.push(std::move(task));
+        }
+        task_cv.notify_one(); // notify the waiting thread
+
+        return done.get(); // Wait for the result
+    }
     return false;
 }
 
 
 bool PydrofoilCore::read_reg_dbg(size_t regno, void* buf, size_t len){
     if(regno == 0 && len==8){
-        *reinterpret_cast<vcml::u64*>(buf) = pydrofoil_cpu_pc(cpu);
+        PythonTask task;
+        task.py_funct = Funct::ReadPc;
+        std::future<uint64_t> done = task.result.get_future();
+
+        {
+            std::lock_guard lock(task_mutex);
+            task_queue.push(std::move(task));
+        }
+        task_cv.notify_one(); // notify the waiting thread
+
+        *reinterpret_cast<vcml::u64*>(buf) = done.get(); // Wait for the result
         return true;
     }
     return false;
@@ -133,40 +94,48 @@ void PydrofoilCore::simulate(size_t cycles)
         std::lock_guard lock(task_mutex);
         task_queue.push(std::move(task));
     }
+    sim_started = true;
     task_cv.notify_one(); // notify the waiting thread
+    
 
-    // Using done.wait() or done.get() would block us until ready 
     while(done.wait_for(std::chrono::seconds(0)) != std::future_status::ready){
-        sc_core::wait(sc_core::SC_ZERO_TIME);
+        
         MemAccess memtask;
 
         {
             std::unique_lock<std::mutex> lock(memtask_mutex);
             memtask_cv.wait(lock, [&]{return !memtask_queue.empty() ||
                                                 (done.wait_for(std::chrono::seconds(0)) == std::future_status::ready);});
+            
             if(!memtask_queue.empty()){
                 memtask = std::move(memtask_queue.front());
                 memtask_queue.pop();
             }
             else
                 continue;
+            
         }
 
         bool success = false;
-        if(memtask.type == MemTask::Read)
-            success = (this->data.read(memtask.addr, memtask.dest, memtask.size, vcml::SBI_NONE) == tlm::TLM_OK_RESPONSE);
+        if(memtask.type == MemTask::Read){
+            success = (data.read(memtask.addr, memtask.dest, memtask.size, vcml::SBI_NONE) == tlm::TLM_OK_RESPONSE);
+            memset(memtask.dest,0x297,8); // To be removed once the 0x1000 initial accesses are fixed
+        }
         else
-            success = (this->data.write(memtask.addr, &memtask.value, memtask.size, vcml::SBI_NONE) == tlm::TLM_OK_RESPONSE);
+            success = (data.write(memtask.addr, &memtask.value, memtask.size, vcml::SBI_NONE) == tlm::TLM_OK_RESPONSE);
         
         memtask.result.set_value(success);
     }
-    std::cout<< "simulate done" << std::endl;
+    sim_started = false;
 }
 
 
 // Called from a coroutine
 vcml::u64 PydrofoilCore::cycle_count() const
 {   
+    if(sim_started)
+        return n_cycles;
+    
     PythonTask task;
     task.py_funct = Funct::GetCycles;
     std::future<uint64_t> done = task.result.get_future();
@@ -176,7 +145,6 @@ vcml::u64 PydrofoilCore::cycle_count() const
         task_queue.push(std::move(task));
     }
     task_cv.notify_one(); // notify the waiting thread
-
     return done.get(); // Wait for the result
 }
 
@@ -202,8 +170,34 @@ void PydrofoilCore::set_pc(vcml::u64 value)
     done.get(); // Wait for the result
 }
 
+/* How it would look like without the std::future
+   Pros: faster (see profiling)
+   Cons: error prone
+   --> Unless in the profiling we see that it's the bottleneck we stick with it
+void PydrofoilCore::set_pc(vcml::u64 value)
+{
+    auto task = std::make_shared<PythonTask>(); //both threads refer to the same object
+    task->py_funct = Funct::SetPc;
+    task->arg = value;
+
+    {
+        std::lock_guard lock(task_mutex);
+        task_queue.push(task);  // Now we're copying a pointer to the struct
+    }
+    task_cv.notify_one(); // notify the waiting thread
+
+    {
+        std::unique_lock lock(task->done_mutex);
+        task->done_cv.wait(lock, [&] { return task->done; });
+    }
+    return done.value;
+}
+*/
+
 
 void PydrofoilCore::python_worker_loop(){
+    std::unordered_map<Funct, std::function<void(PythonTask&)>> handlers = create_handlers(*this);
+
     while(true) {
         PythonTask task;
 
@@ -221,37 +215,36 @@ void PydrofoilCore::python_worker_loop(){
             task_queue.pop();                      // pop: reason not to use eg vectors
         }   // --> lock released (out of scope)
 
-        // Ugly, needs to be improved!!!
-        if (task.py_funct == Funct::Simulate){
-            auto cycles = std::get<size_t>(task.arg);
-            pydrofoil_cpu_simulate(cpu, cycles);
-            task.result.set_value(0); //lock the mutex!
-            memtask_cv.notify_one();
-        } else if (task.py_funct == Funct::GetCycles){
-            auto n_cycles = pydrofoil_cpu_cycles(cpu);
-            task.result.set_value(n_cycles);
-        } else if (task.py_funct == Funct::SetPc){
-            auto pc_value = std::get<size_t>(task.arg);
-            pydrofoil_cpu_set_pc(cpu, pc_value);
-            task.result.set_value(0);
-        } else if (task.py_funct == Funct::SetCb){
-            int res = pydrofoil_cpu_set_ram_read_write_callback(cpu, read_mem, write_mem, this);
-            task.result.set_value(res);
-        } else if (task.py_funct == Funct::Init){
-            auto core_type = std::get<const char*>(task.arg);
-            cpu = pydrofoil_allocate_cpu(core_type, elf.c_str());
-            task.result.set_value(0);
-        } else if (task.py_funct == Funct::FreeCpu){
-            pydrofoil_free_cpu(cpu);
-            task.result.set_value(0);
-        }
+        auto it = handlers.find(task.py_funct);
+        if(it != handlers.end())
+            it->second(task);
     }
+}
+
+
+bool PydrofoilCore::get_dmi_ptr(tlm::tlm_command cmd, uint64_t addr)
+{
+    tlm::tlm_generic_payload tx;
+    tx.set_command(cmd);
+    tx.set_address(addr);
+    tx.set_data_length(1);
+    tx.set_dmi_allowed(true);
+
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    if (data.get_interface()) { // it ensures that the socket is actually bound to something 
+        if (data->get_direct_mem_ptr(tx, dmi_cache))
+            return true;
+    }
+    return false;
 }
 
 
 void PydrofoilCore::end_of_elaboration()
 {
     processor::end_of_elaboration();
+    //use_dmi = get_dmi_ptr(tlm::TLM_READ_COMMAND, 0x80000000); // Remove magic numbers
+    //use_dmi &= get_dmi_ptr(tlm::TLM_READ_COMMAND, 0x1000); // Remove magic numbers
+
     PythonTask task;
     task.py_funct = Funct::SetCb;
     std::future<uint64_t> done = task.result.get_future();

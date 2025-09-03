@@ -25,6 +25,8 @@ add_executable(sysc_vp
     ${SRC}/system.cpp
     ${SRC}/main.cpp
     ${SRC}/core.cpp
+    ${SRC}/python_tasks.cpp
+    ${SRC}/memory_callbacks.cpp
 )
 
 target_include_directories(sysc_vp PRIVATE
