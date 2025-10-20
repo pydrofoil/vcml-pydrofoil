@@ -13,22 +13,48 @@ class C:
         self.callbacks = None
         self.reset()
 
-    def _set_callbacks(self, read, write, payload):
-        self.read = read
-        self.write = write
-        self.mem = ffi.new('uint64_t[1]')
-        #mem = ffi.new('unsigned long[]', 1)
+    def _set_dma_callback(self, dma_cb, payload):
+        self.dma_cb = dma_cb
+        self.dma_payload = payload
+        self._region_struct = ffi.new('pydrofoil_dma_region_t*')
+        self.dma_regions = []
+
+        def get_ptr_and_offset(addr_bytes):
+            # Search cached regions
+            for guest_base, size, host_ptr in self.dma_regions:
+                if guest_base <= addr_bytes < guest_base + size:
+                    offset = (addr_bytes - guest_base) // 8
+                    ptr = ffi.cast('uint64_t*', host_ptr)
+                    return ptr, offset
+
+            # Cache miss - call DMA callback
+            res = self.dma_cb(self._handle, addr_bytes, self._region_struct, self.dma_payload)
+            assert res == 0
+
+            # Cache the new region
+            region = (self._region_struct.guest_base,
+                      self._region_struct.size,
+                      self._region_struct.host_ptr)
+            self.dma_regions.append(region)
+
+            # Calculate pointer and offset
+            guest_base, size, host_ptr = region
+            offset = (addr_bytes - guest_base) // 8
+            ptr = ffi.cast('uint64_t*', host_ptr)
+            return ptr, offset
+
         def pyread(addr):
             addr = int(addr)
-            addr = (addr << 3)
-            res = self.read(self._handle, addr, 8, ffi.cast('uint64_t*', self.mem), payload)
-            assert res == 0
-            return _pydrofoil.bitvector(64, self.mem[0])
+            addr_bytes = (addr << 3)
+            ptr, offset = get_ptr_and_offset(addr_bytes)
+            return _pydrofoil.bitvector(64, ptr[offset])
+
         def pywrite(addr, value):
             addr = int(addr)
-            addr = (addr << 3)
-            res = self.write(self._handle, addr, 8, value, payload)
-            assert res == 0
+            addr_bytes = (addr << 3)
+            ptr, offset = get_ptr_and_offset(addr_bytes)
+            ptr[offset] = value
+
         self.callbacks = _pydrofoil.Callbacks(mem_read8_intercept=pyread, mem_write8_intercept=pywrite)
 
     def step(self):
@@ -36,6 +62,10 @@ class C:
         self.cpu.step()
 
     def reset(self):
+        # Clear DMA region cache on reset
+        if hasattr(self, 'dma_regions'):
+            self.dma_regions = []
+
         if self.rv64:
             cls = _pydrofoil.RISCV64
         else:
@@ -72,9 +102,9 @@ def pydrofoil_free_cpu(i):
     return 0
 
 @ffi.def_extern()
-def pydrofoil_cpu_set_ram_read_write_callback(i, read_cb, write_cb, payload):
+def pydrofoil_cpu_set_dma_callback(i, dma_cb, payload):
     cpu = ffi.from_handle(i)
-    cpu._set_callbacks(read_cb, write_cb, payload)
+    cpu._set_dma_callback(dma_cb, payload)
     cpu.reset()
     return 0
 

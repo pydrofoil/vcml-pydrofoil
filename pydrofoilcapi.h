@@ -18,10 +18,25 @@ CFFI_DLLEXPORT int pydrofoil_cpu_set_pc(void* cpu, uint64_t value);
 
 //
 
-CFFI_DLLEXPORT int pydrofoil_cpu_set_ram_read_write_callback(
+// DMA-based memory access
+typedef struct {
+    void* host_ptr;      // Host pointer to the memory region
+    uint64_t guest_base; // Base address in guest address space
+    uint64_t size;       // Size of the accessible region in bytes
+} pydrofoil_dma_region_t;
+
+// DMA callback function type
+// Returns 0 on success, -1 if no mapping available for this address
+typedef int (*pydrofoil_dma_callback_t)(
+    void* cpu,
+    uint64_t guest_addr,
+    pydrofoil_dma_region_t* region,
+    void* payload
+);
+
+CFFI_DLLEXPORT int pydrofoil_cpu_set_dma_callback(
         void* cpu,
-        int (*)(void* cpu, uint64_t address, int size, uint64_t*, void*),
-        int (*)(void* cpu, uint64_t address, int size, uint64_t, void*),
+        pydrofoil_dma_callback_t callback,
         void* payload);
 
 
