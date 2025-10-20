@@ -20,28 +20,24 @@ class C:
         self.dma_regions = []
 
         def get_ptr_and_offset(addr_bytes):
-            # Search cached regions
-            for guest_base, size, host_ptr in self.dma_regions:
+            for i, (guest_base, size, byte_ptr) in enumerate(self.dma_regions):
                 if guest_base <= addr_bytes < guest_base + size:
+                    if i != 0:
+                        self.dma_regions[0], self.dma_regions[i] = self.dma_regions[i], self.dma_regions[0]
                     offset_bytes = addr_bytes - guest_base
-                    byte_ptr = ffi.cast('uint8_t*', host_ptr)
                     ptr = ffi.cast('uint64_t*', byte_ptr + offset_bytes)
                     return ptr
 
-            # Cache miss - call DMA callback
             res = self.dma_cb(self._handle, addr_bytes, self._region_struct, self.dma_payload)
             assert res == 0
 
-            # Cache the new region
             region = (self._region_struct.guest_base,
                       self._region_struct.size,
-                      self._region_struct.host_ptr)
+                      ffi.cast('uint8_t*', self._region_struct.host_ptr))
             self.dma_regions.append(region)
 
-            # Calculate pointer
-            guest_base, size, host_ptr = region
+            guest_base, size, byte_ptr = region
             offset_bytes = addr_bytes - guest_base
-            byte_ptr = ffi.cast('uint8_t*', host_ptr)
             ptr = ffi.cast('uint64_t*', byte_ptr + offset_bytes)
             return ptr
 
