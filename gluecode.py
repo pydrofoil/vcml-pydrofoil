@@ -23,9 +23,10 @@ class C:
             # Search cached regions
             for guest_base, size, host_ptr in self.dma_regions:
                 if guest_base <= addr_bytes < guest_base + size:
-                    offset = (addr_bytes - guest_base) // 8
-                    ptr = ffi.cast('uint64_t*', host_ptr)
-                    return ptr, offset
+                    offset_bytes = addr_bytes - guest_base
+                    byte_ptr = ffi.cast('uint8_t*', host_ptr)
+                    ptr = ffi.cast('uint64_t*', byte_ptr + offset_bytes)
+                    return ptr
 
             # Cache miss - call DMA callback
             res = self.dma_cb(self._handle, addr_bytes, self._region_struct, self.dma_payload)
@@ -37,23 +38,24 @@ class C:
                       self._region_struct.host_ptr)
             self.dma_regions.append(region)
 
-            # Calculate pointer and offset
+            # Calculate pointer
             guest_base, size, host_ptr = region
-            offset = (addr_bytes - guest_base) // 8
-            ptr = ffi.cast('uint64_t*', host_ptr)
-            return ptr, offset
+            offset_bytes = addr_bytes - guest_base
+            byte_ptr = ffi.cast('uint8_t*', host_ptr)
+            ptr = ffi.cast('uint64_t*', byte_ptr + offset_bytes)
+            return ptr
 
         def pyread(addr):
             addr = int(addr)
             addr_bytes = (addr << 3)
-            ptr, offset = get_ptr_and_offset(addr_bytes)
-            return _pydrofoil.bitvector(64, ptr[offset])
+            ptr = get_ptr_and_offset(addr_bytes)
+            return _pydrofoil.bitvector(64, ptr[0])
 
         def pywrite(addr, value):
             addr = int(addr)
             addr_bytes = (addr << 3)
-            ptr, offset = get_ptr_and_offset(addr_bytes)
-            ptr[offset] = value
+            ptr = get_ptr_and_offset(addr_bytes)
+            ptr[0] = value
 
         self.callbacks = _pydrofoil.Callbacks(mem_read8_intercept=pyread, mem_write8_intercept=pywrite)
 

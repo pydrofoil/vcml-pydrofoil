@@ -8,7 +8,7 @@
 
 struct block {
   uint64_t block_id;
-  uint64_t *mem;
+  uint8_t *mem;
   struct block *next;
 };
 
@@ -28,7 +28,7 @@ int get_dma_region(void* cpu, uint64_t guest_addr, pydrofoil_dma_region_t* regio
         if (current->block_id == block_id) {
             region->host_ptr = (void*)current->mem;
             region->guest_base = block_id;
-            region->size = (BLOCK_MASK + 1) * sizeof(uint64_t);
+            region->size = BLOCK_MASK + 1;
             printf("DMA request for 0x%llx -> returning existing block at 0x%llx, size %llu bytes\n",
                    (unsigned long long)guest_addr, (unsigned long long)block_id,
                    (unsigned long long)region->size);
@@ -40,13 +40,13 @@ int get_dma_region(void* cpu, uint64_t guest_addr, pydrofoil_dma_region_t* regio
     // Allocate new block on-demand
     struct block *new_block = (struct block *)malloc(sizeof(struct block));
     new_block->block_id = block_id;
-    new_block->mem = (uint64_t *)calloc(BLOCK_MASK + 1, sizeof(uint64_t));
+    new_block->mem = (uint8_t *)calloc(BLOCK_MASK + 1, 1);
     new_block->next = mem->first_block;
     mem->first_block = new_block;
 
     region->host_ptr = (void*)new_block->mem;
     region->guest_base = block_id;
-    region->size = (BLOCK_MASK + 1) * sizeof(uint64_t);
+    region->size = BLOCK_MASK + 1;
     printf("DMA request for 0x%llx -> allocated NEW block at 0x%llx, size %llu bytes\n",
            (unsigned long long)guest_addr, (unsigned long long)block_id,
            (unsigned long long)region->size);
