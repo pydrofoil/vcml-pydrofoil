@@ -8,7 +8,7 @@
 
 struct block {
   uint64_t block_id;
-  uint64_t *mem;
+  uint8_t *mem;
   struct block *next;
 };
 
@@ -22,13 +22,12 @@ int write_mem(void* cpu, uint64_t address, int size, uint64_t value, void* paylo
     struct mem* mem = (struct mem*) payload;
     uint64_t mask = address & ~BLOCK_MASK;
     uint64_t offset = address & BLOCK_MASK;
-    uint64_t index = offset >> 3;  // Convert byte offset to uint64_t index
 
     struct block *current = mem->first_block;
 
     while (current != NULL) {
       if (current->block_id == mask) {
-          current->mem[index] = value;
+          *(uint64_t*)(current->mem + offset) = value;
           return 0;
       } else {
           current = current->next;
@@ -41,14 +40,14 @@ int write_mem(void* cpu, uint64_t address, int size, uint64_t value, void* paylo
      */
     struct block *new_block = (struct block *)malloc(sizeof(struct block));
     new_block->block_id = mask;
-    new_block->mem = (uint64_t *)calloc(BLOCK_MASK + 1, sizeof(uint64_t));
-    new_block->mem[index] = value;
+    new_block->mem = (uint8_t *)calloc(BLOCK_MASK + 1, 1);
+    *(uint64_t*)(new_block->mem + offset) = value;
     new_block->next = mem->first_block;
     mem->first_block = new_block;
 
     // Register this block as a DMA region
-    uint64_t block_size = (BLOCK_MASK + 1) * sizeof(uint64_t);
-    pydrofoil_cpu_set_dma_region(cpu, mask, block_size, (uint8_t*)new_block->mem);
+    uint64_t block_size = BLOCK_MASK + 1;
+    pydrofoil_cpu_set_dma_region(cpu, mask, block_size, new_block->mem);
     printf("DMA region registered at 0x%llx, size %llu bytes, physical addr %p\n",
            (unsigned long long)mask, (unsigned long long)block_size, (void*)new_block->mem);
 
@@ -59,13 +58,12 @@ int read_mem(void* cpu, uint64_t address, int size, uint64_t* destination, void*
     struct mem* mem = (struct mem*) payload;
     uint64_t mask = address & ~BLOCK_MASK;
     uint64_t offset = address & BLOCK_MASK;
-    uint64_t index = offset >> 3;  // Convert byte offset to uint64_t index
 
     struct block *current = mem->first_block;
 
     while (current != NULL) {
         if (current->block_id == mask) {
-            *destination = current->mem[index];
+            *destination = *(uint64_t*)(current->mem + offset);
             return 0;
         } else {
             current = current->next;
