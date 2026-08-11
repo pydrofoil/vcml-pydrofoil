@@ -7,12 +7,23 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "system.h"
-#include "pydrofoilcapi.h"
+#include <chrono>
+#include <iostream>
+#include <ostream>
+#include <string>
 
-extern "C" int sc_main(int argc, char** argv)
-{
-    class virtual_platform::system system("system");
+// The timer starts on construction and prints on destruction
+class Profiler {
+    public:
+    std::string fname;
+    std::chrono::high_resolution_clock::time_point start;
 
-    return system.run();
-}
+    Profiler(std::string fname): fname(fname), start(std::chrono::high_resolution_clock::now()) {}
+
+    virtual ~Profiler()
+    {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        std::cout << fname << ": " << duration.count() << std::endl;
+    }
+};

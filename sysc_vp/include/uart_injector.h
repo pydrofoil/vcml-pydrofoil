@@ -7,12 +7,30 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "system.h"
-#include "pydrofoilcapi.h"
+#ifndef UART_INJECTOR_HPP
+#define UART_INJECTOR_HPP
 
-extern "C" int sc_main(int argc, char** argv)
-{
-    class virtual_platform::system system("system");
+#include "vcml.h"
 
-    return system.run();
-}
+namespace injector {
+
+class UartInjector : public vcml::module, public vcml::serial_host {
+    private:
+    vcml::sc_event sc_ev;
+    uint8_t uart_data;
+
+    void uart_transmit();
+
+    public:
+    vcml::serial_initiator_socket uart_tx;
+
+    UartInjector(const sc_core::sc_module_name& nm);
+
+    void send_to_guest(uint8_t data);
+
+    virtual ~UartInjector();
+};
+
+} // namespace injector
+
+#endif

@@ -4,10 +4,12 @@ project(sysc_vp VERSION 2025.07.31 LANGUAGES C CXX)
 # Look into the cmake/ subdir when searching for a custom module
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 include(FindGithubRepo)
-set(PYDROFOIL_LIB_DIR ${PROJECT_SOURCE_DIR}/../)
+
+get_filename_component(PYDROFOIL_LIB_DIR "${PROJECT_SOURCE_DIR}/.." ABSOLUTE)
+message(STATUS "PYDROFOIL_LIB_DIR=${PYDROFOIL_LIB_DIR}")
 
 # Normally, we would create a library for those, install it
-# and import it using find_package(), here it seems that 
+# and import it using find_package(), here it seems that
 # find_github_repo takes care of this for us, those sets
 # are somehow used by find_github_repo()
 set(DEPS_DIR_GENERAL ${PROJECT_SOURCE_DIR}/deps)
@@ -28,22 +30,26 @@ add_executable(sysc_vp
     ${SRC}/core.cpp
     ${SRC}/python_tasks.cpp
     ${SRC}/memory_callbacks.cpp
+    ${SRC}/uart_injector.cpp
 )
 
+# in ${PYDROFOIL_LIB_DIR} we have pydrofoilcapi.h
 target_include_directories(sysc_vp PRIVATE
-    ${PROJECT_SOURCE_DIR}/pydrofoil/include
+    ${PYDROFOIL_LIB_DIR}
     ${PROJECT_SOURCE_DIR}/include
-    ${SRC}  
-)
-
-# Tells the linker where to find compiled code *at compile time*
-target_link_libraries(sysc_vp mwr vcml)
-target_link_libraries(sysc_vp 
-  pydrofoilcapi_cffi # The linker expects to find a shared object named libpydorofilapi_cffi.so
+    ${SRC}
 )
 
 target_link_directories(sysc_vp PRIVATE
     ${PYDROFOIL_LIB_DIR}
+    ${PYDROFOIL_LIB_DIR}/pypy-pydrofoil-scripting-experimental/bin/
+)
+
+# Tells the linker where to find compiled code *at compile time*
+target_link_libraries(sysc_vp mwr vcml)
+target_link_libraries(sysc_vp
+  pypy3.11-c
+  pydrofoilcapi_cffi # The linker expects to find a shared object named libpydorofilapi_cffi.so
 )
 
 set_target_properties(sysc_vp PROPERTIES CXX_STANDARD 17)
